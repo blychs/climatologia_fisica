@@ -65,18 +65,18 @@ def latlon_domain(dataset, lats_lons):
 
 def calculate_q(rhum, pressure, temperature):
 
-    """ Calculate q from relative humidity, pressure
-    and temperature
+    """ Calcula q desde relative humidity, pressure
+    y temperature, La temperatura DEBE estar en Celsius
     segun https://pielkeclimatesci.wordpress.com/2010/07/22/
       guest-post-calculating-moist-enthalpy-from-
       usual-meteorological-measurements-by-francis-massen/"""
 
-    saturation_vapor_pres = 10**((0.7859+0.03477*temperature /
-                                 1 + 0.00412*temperature) + 2)
+    saturation_vapor_pres = 10 ** ((0.7859 + 0.03477 * temperature /
+                                    (1 + 0.00412*temperature)) + 2)
     vapor_pres = rhum / 100 * saturation_vapor_pres
 
     # Presión en pascales
-    return (0.622/(pressure * 100 / vapor_pres - 0.378))
+    return (0.622/((pressure * 100 / vapor_pres) - 0.378))
 
 
 def calculate_h(tas_ds, huss_ds):
