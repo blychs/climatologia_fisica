@@ -2,17 +2,19 @@ import numpy as np
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import xarray as xr
-import metpy
+# import metpy
 import metpy.units as units
-import metpy.constants as mpconstants
-import seaborn as sns
+import metpy.calc as mpcalc
+# import metpy.constants as mpconstants
+# import seaborn as sns
 import cartopy.feature as cfeature
-from cartopy.util import add_cyclic_point
+# from cartopy.util import add_cyclic_point
 
 
 def xradd_cyclic_point(xarray_obj, dim, period=None):
     if period is None:
-        period = xarray_obj.sizes[dim] * xarray_obj.coords[dim][:2].diff(dim).item()
+        period = ((xarray_obj.sizes[dim] *
+                   xarray_obj.coords[dim][:2]).diff(dim).item())
     first_point = xarray_obj.isel({dim: slice(1)})
     first_point.coords[dim] = first_point.coords[dim]+period
     return xr.concat([xarray_obj, first_point], dim=dim)
@@ -21,20 +23,24 @@ def xradd_cyclic_point(xarray_obj, dim, period=None):
 def load_file(path):
     """
     Carga archivo/s y devuelve:
-    Ensamble, ensamble en NDJFM, ensamble en MJJAS, media, media en NDJFM, media en MJJAS"""
+    Ensamble, ensamble en NDJFM, ensamble en MJJAS, media, media en NDJFM,
+    media en MJJAS"""
     file_dict = {}
-    ds = xr.open_mfdataset(path, combine='nested', concat_dim='ensemble').mean(dim='ensemble')
+    ds = xr.open_mfdataset(path, combine='nested',
+                           concat_dim='ensemble').mean(dim='ensemble')
     file_dict['ds'] = xradd_cyclic_point(ds, 'lon')
     file_dict['mean'] = xradd_cyclic_point(ds.mean(dim='time'), 'lon')
     return file_dict
 
 
-def ploteo_general(dataarray, title=None, vmin=None, vmax=None, projection=ccrs.PlateCarree(), figsize=(20,10),
+def ploteo_general(dataarray, title=None, vmin=None, vmax=None,
+                   projection=ccrs.PlateCarree(), figsize=(20, 10),
                    extend='max', cmap=None, under='none', over='none'):
     plt.figure(figsize=(figsize))
     ax = plt.axes(projection=projection)
-    if cmap != None:
-        ploteo = dataarray.plot(vmin=vmin, vmax=vmax, extend=extend, ax=ax, cmap=cmap)
+    if cmap is not None:
+        ploteo = dataarray.plot(vmin=vmin, vmax=vmax, extend=extend, ax=ax,
+                                cmap=cmap)
     else:
         ploteo = dataarray.plot(vmin=vmin, vmax=vmax, extend=extend, ax=ax)
     cmap = ploteo.get_cmap()
@@ -57,26 +63,37 @@ def latlon_domain(dataset, lats_lons):
     return dataoutput
 
 
+def calculate_q(rhum, pressure, temperature):
+
+    """ Calculate q from relative humidity, pressure
+    and temperature
+    segun https://pielkeclimatesci.wordpress.com/2010/07/22/
+      guest-post-calculating-moist-enthalpy-from-
+      usual-meteorological-measurements-by-francis-massen/"""
+
+    saturation_vapor_pres = 10**((0.7859+0.03477*temperature /
+                                 1 + 0.00412*temperature) + 2)
+    vapor_pres = rhum / 100 * saturation_vapor_pres
+
+    return (0.622/(pressure/vapor_pres - 0.378))
+
+
 def calculate_h(tas_ds, huss_ds):
 
     """Calculate moist static energy"""
 
-    heights = 2 * np.ones((tas_ds.dims['lat'], tas_ds.dims['lon'])) * units.meter
+    heights = 2 * np.ones((tas_ds.dims['lat'],
+                           tas_ds.dims['lon'])) * units.meter
 
     tas_ds.tas.attrs['units'] = 'kelvin'
     temperature = tas_ds.metpy.parse_cf('tas')
     huss_ds.huss.attrs['units'] = 'dimensionless'
     humidity = huss_ds.metpy.parse_cf('huss')
 
-    lon = tas_ds.lon
-    #        # lon['units'] = 'degrees'
-    lat = tas_ds.lat
-    #        #.values * units.degrees
-
-
-    moist_static_energy = mpcalc.moist_static_energy(heights=heights, temperature=temperature,
-                                                     specific_humidity=humidity).to('J/kg') 
-    return moist_static_energy
+    m_s_e = mpcalc.moist_static_energy(heights=heights,
+                                       temperature=temperature,
+                                       specific_humidity=humidity).to('J/kg')
+    return m_s_e
 
 
 def advection(variable, u_da, v_da, units_wind='m/s'):
@@ -84,16 +101,16 @@ def advection(variable, u_da, v_da, units_wind='m/s'):
     Calcula la advección en base a un dataarray de u y un dataarray de v
     en m/s """
     lats = u_da.lat
-    lons = u_da.lons
+    lons = u_da.lon
     u = u_da.values * units['m/s']
     v = v_da.values * units['m/s']
-    dx, dy = mpcalc.lat_lon_grid_deltas(lon, lat)
+    dx, dy = mpcalc.lat_lon_grid_deltas(lons, lats)
     return mpcalc.advection(variable, [u, v],
                             (dx, dy), dim_order='yx')
 
 
-def streamQuiver(ax,sp,*args,spacing=None,n=5,**kwargs):
-    """ Plot arrows from streamplot data  
+def streamQuiver(ax, sp, *args, spacing=None, n=5,**kwargs):
+    """ Plot arrows from streamplot data
     The number of arrows per streamline is controlled either by `spacing` or by `n`.
     See `lines_to_arrows`.
     """
@@ -103,7 +120,7 @@ def streamQuiver(ax,sp,*args,spacing=None,n=5,**kwargs):
         y=line[:,1]
         s     = np.zeros(x.shape)
         s[1:] = np.sqrt((x[1:]-x[0:-1])**2+ (y[1:]-y[0:-1])**2)
-        s     = np.cumsum(s)                                  
+        s     = np.cumsum(s)
         return s
 
     def curve_extract(line,spacing,offset=None):
@@ -123,7 +140,7 @@ def streamQuiver(ax,sp,*args,spacing=None,n=5,**kwargs):
         return np.array([xx,yy]).T
 
     def seg_to_lines(seg):
-        """ Convert a list of segments to a list of lines """ 
+        """ Convert a list of segments to a list of lines """
         def extract_continuous(i):
             x=[]
             y=[]
@@ -163,7 +180,7 @@ def streamQuiver(ax,sp,*args,spacing=None,n=5,**kwargs):
         return lines
 
     def lines_to_arrows(lines,n=5,spacing=None,normalize=True):
-        """ Extract "streamlines" arrows from a set of lines 
+        """ Extract "streamlines" arrows from a set of lines
         Either: `n` arrows per line
             or an arrow every `spacing` distance
         If `normalize` is true, the arrows have a unit length
@@ -185,9 +202,9 @@ def streamQuiver(ax,sp,*args,spacing=None,n=5,**kwargs):
 
         if normalize:
             dn = [ np.sqrt(ddx**2 + ddy**2) for ddx,ddy in zip(arrow_dx,arrow_dy)]
-            arrow_dx = [ddx/ddn for ddx,ddn in zip(arrow_dx,dn)] 
-            arrow_dy = [ddy/ddn for ddy,ddn in zip(arrow_dy,dn)] 
-        return  arrow_x,arrow_y,arrow_dx,arrow_dy 
+            arrow_dx = [ddx/ddn for ddx,ddn in zip(arrow_dx,dn)]
+            arrow_dy = [ddy/ddn for ddy,ddn in zip(arrow_dy,dn)]
+        return  arrow_x,arrow_y,arrow_dx,arrow_dy
 
     # --- Main body of streamQuiver
     # Extracting lines
