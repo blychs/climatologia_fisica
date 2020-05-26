@@ -75,7 +75,8 @@ def calculate_q(rhum, pressure, temperature):
                                  1 + 0.00412*temperature) + 2)
     vapor_pres = rhum / 100 * saturation_vapor_pres
 
-    return (0.622/(pressure/vapor_pres - 0.378))
+    # Presión en pascales
+    return (0.622/(pressure * 100 / vapor_pres - 0.378))
 
 
 def calculate_h(tas_ds, huss_ds):
