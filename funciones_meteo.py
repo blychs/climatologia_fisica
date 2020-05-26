@@ -42,7 +42,8 @@ def ploteo_general(dataarray, title=None, vmin=None, vmax=None,
         ploteo = dataarray.plot(vmin=vmin, vmax=vmax, extend=extend, ax=ax,
                                 cmap=cmap)
     else:
-        ploteo = dataarray.plot(vmin=vmin, vmax=vmax, extend=extend, ax=ax)
+        ploteo = dataarray.plot(vmin=vmin, vmax=vmax, extend=extend, ax=ax,
+                                transform=ccrs.PlateCarree())
     cmap = ploteo.get_cmap()
     if under != 'none':
         cmap.set_under(under)
