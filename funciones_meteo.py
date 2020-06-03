@@ -2,13 +2,68 @@ import numpy as np
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import xarray as xr
-# import metpy
+import metpy
 import metpy.units as units
 import metpy.calc as mpcalc
 # import metpy.constants as mpconstants
 # import seaborn as sns
 import cartopy.feature as cfeature
 # from cartopy.util import add_cyclic_point
+
+
+def xarray_trend(xarr):    
+    from scipy import stats
+    # getting shapes
+    
+    m = np.prod(xarr.shape[1:]).squeeze()
+    n = xarr.shape[0]
+    
+    # creating x and y variables for linear regression
+    x = xarr.time.to_pandas().index.to_julian_date().values[:, None]
+    y = xarr.to_masked_array().reshape(n, -1)
+    
+    # ############################ #
+    # LINEAR REGRESSION DONE BELOW #
+    xm = x.mean(0)  # mean
+    ym = y.mean(0)  # mean
+    ya = y - ym  # anomaly
+    xa = x - xm  # anomaly
+    
+    # variance and covariances
+    xss = (xa ** 2).sum(0) / (n - 1)  # variance of x (with df as n-1)
+    yss = (ya ** 2).sum(0) / (n - 1)  # variance of y (with df as n-1)
+    xys = (xa * ya).sum(0) / (n - 1)  # covariance (with df as n-1)
+    # slope and intercept
+    slope = xys / xss
+    intercept = ym - (slope * xm)
+    # statistics about fit
+    df = n - 2
+    r = xys / (xss * yss)**0.5
+    t = r * (df / ((1 - r) * (1 + r)))**0.5
+    p = stats.distributions.t.sf(abs(t), df)
+    
+    # misclaneous additional functions
+    # yhat = dot(x, slope[None]) + intercept
+    # sse = ((yhat - y)**2).sum(0) / (n - 2)  # n-2 is df
+    # se = ((1 - r**2) * yss / xss / df)**0.5
+    
+    # preparing outputs
+    out = xarr[:2].mean('time')
+    # first create variable for slope and adjust meta
+    xarr_slope = out.copy()
+    xarr_slope.name += '_slope'
+    xarr_slope.attrs['units'] = 'units / day'
+    xarr_slope.values = slope.reshape(xarr.shape[1:])
+    # do the same for the p value
+    xarr_p = out.copy()
+    xarr_p.name += '_Pvalue'
+    xarr_p.attrs['info'] = "If p < 0.05 then the results from 'slope' are significant."
+    xarr_p.values = p.reshape(xarr.shape[1:])
+    # join these variables
+    xarr_out = xarr_slope.to_dataset(name='slope')
+    xarr_out['pval'] = xarr_p
+
+    return xarr_out
 
 
 def xradd_cyclic_point(xarray_obj, dim, period=None):
@@ -27,9 +82,12 @@ def load_file(path):
     media en MJJAS"""
     file_dict = {}
     ds = xr.open_mfdataset(path, combine='nested',
-                           concat_dim='ensemble').mean(dim='ensemble')
+                           concat_dim='ensemble').mean('ensemble',
+                                                       keep_attrs=True
+                                                       ).metpy.parse_cf()
     file_dict['ds'] = xradd_cyclic_point(ds, 'lon')
-    file_dict['mean'] = xradd_cyclic_point(ds.mean(dim='time'), 'lon')
+    file_dict['mean'] = xradd_cyclic_point(ds.mean(dim='time',
+                                                   keep_attrs=True), 'lon')
     return file_dict
 
 
@@ -80,17 +138,14 @@ def calculate_q(rhum, pressure, temperature):
     return (0.622/((pressure * 100 / vapor_pres) - 0.378))
 
 
-def calculate_h(tas_ds, huss_ds):
+def calculate_h(tas_da, huss_da, heights, lats, lons):
 
     """Calculate moist static energy"""
 
-    heights = 2 * np.ones((tas_ds.dims['lat'],
-                           tas_ds.dims['lon'])) * units.meter
-
-    tas_ds.tas.attrs['units'] = 'kelvin'
-    temperature = tas_ds.metpy.parse_cf('tas')
-    huss_ds.huss.attrs['units'] = 'dimensionless'
-    humidity = huss_ds.metpy.parse_cf('huss')
+    tas_da.attrs['units'] = 'kelvin'
+    temperature = tas_da
+    huss_da.attrs['units'] = 'dimensionless'
+    humidity = huss_da
 
     m_s_e = mpcalc.moist_static_energy(heights=heights,
                                        temperature=temperature,
